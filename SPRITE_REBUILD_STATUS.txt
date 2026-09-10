@@ -1,0 +1,1 @@
+Warfront sprite rebuild deployment in progress. This branch will be replaced by the completed integrated build.
