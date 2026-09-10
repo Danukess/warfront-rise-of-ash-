@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#07090d">
+<title>Warfront: Rise of Ash</title>
+<link rel="stylesheet" href="style.css?v=final-sprite-1">
+</head>
+<body>
+<div id="app">
+  <section id="menuScreen" class="screen active">
+    <div class="bg"></div>
+    <div class="menuWrap"><div class="menuPanel">
+      <div class="tag">RAVENHOLD COMMAND</div><div class="logo">WARFRONT<span>RISE OF ASH</span></div>
+      <div class="menuBtns">
+        <button id="continueBtn" class="metal primary">CONTINUE CAMPAIGN</button>
+        <button id="newBtn" class="metal">NEW CAMPAIGN</button>
+        <button id="menuCampaignBtn" class="metal">CAMPAIGN MAP</button>
+        <button id="menuArmyBtn" class="metal">ARMY & UPGRADES</button>
+      </div><div class="version">PC build · autosave enabled · animated 2D battle sprites</div>
+    </div></div>
+  </section>
+
+  <section id="hubScreen" class="screen">
+    <header class="topbar"><div class="resource" id="resLeft"></div><div class="brand">WARFRONT<span>RISE OF ASH</span></div><div class="nav" id="hubNav"></div></header>
+    <div class="content"><div id="hubContent" class="section"></div></div>
+  </section>
+
+  <section id="battleScreen" class="screen">
+    <div class="battleGrid">
+      <header class="battleTop">
+        <div class="faction">RAVENHOLD<div class="hpTrack"><div id="php" class="hpFill blue" style="width:100%"></div></div></div>
+        <div class="battleBrand">WARFRONT<span>RISE OF ASH</span></div>
+        <div class="faction right">OBSIDIAN LEGION<div class="hpTrack"><div id="ehp" class="hpFill red" style="width:100%"></div></div></div>
+      </header>
+      <div class="battleArea">
+        <canvas id="battle" width="1600" height="820"></canvas><div id="flash" class="flash"></div><div id="toast" class="toast"></div>
+        <div class="stageHud"><strong id="battleStage">CHAPTER I — RUINED OUTPOST</strong><small>Wave <span id="wave">1/6</span> · <span class="mana">MANA <span id="mana">220</span>/500</span> · <span id="difficulty">NORMAL</span></small></div>
+        <div class="sideControls"><button data-speed="1" class="active">×1</button><button data-speed="2">×2</button><button data-speed="3">×3</button><button id="pause">Ⅱ</button></div>
+        <div id="battleOverlay" class="battleOverlay"><div id="battlePanel" class="battlePanel"></div></div>
+        <button id="devBtn" class="dev">DEV</button><div id="devPanel" class="devPanel"><b>Developer Console</b><br><button data-cheat="mana">Max Mana</button><button data-cheat="win">Instant Win</button><button data-cheat="gold">+5000 Gold</button><button data-cheat="unlock">Unlock Campaign</button></div>
+      </div>
+      <div class="battleBottom"><div id="unitBar" class="unitBar"></div><aside class="commandPanel"><div class="stats"><span>Gold: <b id="battleGold">0</b></span><span>Kills: <b id="kills">0</b></span><span>Units: <b id="unitCount">0</b></span><span>Order: <b id="orderText">Assault</b></span></div><div class="commands"><button data-order="hold">HOLD</button><button data-order="assault" class="active">ASSAULT</button><button data-order="retreat">RETREAT</button><button id="heroBtn">ARTHOS</button></div><button id="meteorBtn" class="spell">☄ METEOR RAIN · 180 MANA</button><div id="battleLog" class="log"></div></aside></div>
+    </div>
+  </section>
+</div>
+<script src="game.js?v=final-sprite-1"></script>
+</body>
+</html>
