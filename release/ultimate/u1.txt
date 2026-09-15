@@ -1,0 +1,115 @@
+to}
+  .battleHeader{min-width:420px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="faction">RAVENHOLD<div class="hpShell"><div id="playerHp" class="hpFill blue" style="width:100%"></div></div></div>
+    <div class="brand">WARFRONT<span>RISE OF ASH</span><small>Illustrated Ultimate Build</small></div>
+    <div class="faction right">OBSIDIAN LEGION<div class="hpShell"><div id="enemyHp" class="hpFill red" style="width:100%"></div></div></div>
+  </header>
+
+  <section class="main">
+    <canvas id="game" width="1600" height="900"></canvas>
+    <div class="flash" id="flash"></div>
+    <div class="battleHeader">
+      <div class="title" id="stageTitle">CHAPTER I — RUINED OUTPOST</div>
+      <div class="sub">Wave <span id="waveText">1 / 6</span> · Mana <b id="manaText">500 / 500</b> · <span id="battleStatus">Advance</span></div>
+    </div>
+    <div class="speedStack">
+      <button class="speedBtn active" data-speed="1">×1</button>
+      <button class="speedBtn" data-speed="2">×2</button>
+      <button class="speedBtn" data-speed="3">×3</button>
+      <button id="pauseBtn">II</button>
+    </div>
+    <div class="minimap">Frontline<div class="track"><div id="frontBlue" class="front" style="width:45%"></div><div id="frontRed" class="enemyFront" style="width:45%"></div></div></div>
+    <div id="toast" class="toast"></div>
+
+    <div id="overlay" class="overlay">
+      <div class="modal" id="modalInner"></div>
+    </div>
+  </section>
+
+  <section class="bottom">
+    <div id="cards" class="cards"></div>
+    <aside class="sidePanel">
+      <div class="panelBlock resources" id="resources"></div>
+      <div class="commandGrid panelBlock">
+        <button class="btn active" data-order="advance">ADVANCE</button>
+        <button class="btn" data-order="hold">HOLD LINE</button>
+        <button class="btn" data-order="retreat">RETREAT</button>
+        <button class="btn" data-order="rally">RALLY PUSH</button>
+      </div>
+      <div class="abilityGrid panelBlock">
+        <button id="heroBtn" class="btn bigBlue">ARTHOS · Q</button>
+        <button id="meteorBtn" class="btn bigOrange">METEOR RAIN · W</button>
+        <button id="ballistaBtn" class="btn bigRed">BALLISTA BARRAGE · E</button>
+      </div>
+      <div id="log" class="log panelBlock"></div>
+      <div class="panelBlock" style="font:13px/1.45 Arial,sans-serif;color:#c8ced6">Hotkeys: <b>1–4</b> recruit units · <b>Q</b> Arthos · <b>W</b> Meteor · <b>E</b> Ballista · <b>A/S/D/F</b> orders</div>
+    </aside>
+  </section>
+</div>
+
+<script>
+const $ = sel => document.querySelector(sel);
+const canvas = $('#game'), ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = true;
+const W = canvas.width, H = canvas.height;
+
+const ui = {
+  overlay: $('#overlay'), modal: $('#modalInner'), toast: $('#toast'), flash: $('#flash'), log: $('#log'),
+  stageTitle: $('#stageTitle'), waveText: $('#waveText'), manaText: $('#manaText'), battleStatus: $('#battleStatus'),
+  playerHp: $('#playerHp'), enemyHp: $('#enemyHp'), frontBlue: $('#frontBlue'), frontRed: $('#frontRed'),
+  resources: $('#resources'), cards: $('#cards')
+};
+
+const assets = {};
+const loadImage = src => new Promise((res, rej)=>{ const i = new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=src; });
+
+const UNIT_DEFS = {
+  swordsman:{key:'swordsman', name:'Swordsman', role:'Frontline', cost:55, hp:185, dmg:22, speed:92, range:58, cd:0.82, size:1.62, row:0, card:'swordsman.png', desc:'Balanced melee soldier with reliable damage.', tint:'#84c7ff'},
+  spearman:{key:'spearman', name:'Spearman', role:'Anti-charge', cost:70, hp:210, dmg:26, speed:86, range:74, cd:1.0, size:1.64, row:2, card:'spearman.png', desc:'Long reach and sturdy defence.', tint:'#8bcfff'},
+  archer:{key:'archer', name:'Archer', role:'Ranged', cost:75, hp:125, dmg:24, speed:84, range:320, cd:1.15, size:1.56, row:4, card:'archer.png', projectile:true, desc:'Fires from afar and softens advancing troops.', tint:'#89ceff'},
+  cavalry:{key:'cavalry', name:'Cavalry', role:'Shock unit', cost:120, hp:290, dmg:34, speed:132, range:66, cd:0.92, size:2.0, row:6, card:'cavalry.png', desc:'Fast impact unit that breaks enemy lines.', tint:'#9fd9ff'},
+  arthos:{key:'arthos', name:'Arthos', role:'Hero', cost:0, hp:640, dmg:52, speed:104, range:72, cd:0.75, size:2.25, row:0, card:'arthos.png', hero:true, desc:'Champion of Ravenhold. Powerful frontline hero.', tint:'#d7efff'},
+  legionary:{key:'legionary', name:'Legionary', hp:180, dmg:21, speed:90, range:58, cd:0.86, size:1.62, row:0, tint:'#ff9ca2'},
+  halberdier:{key:'halberdier', name:'Halberdier', hp:215, dmg:25, speed:82, range:76, cd:1.02, size:1.67, row:2, tint:'#ff9ca2'},
+  axeman:{key:'axeman', name:'Axeman', hp:170, dmg:32, speed:98, range:54, cd:0.9, size:1.58, row:4, tint:'#ffb0b0'},
+  raider:{key:'raider', name:'Raider', hp:280, dmg:36, speed:126, range:66, cd:0.94, size:2.02, row:6, tint:'#ffb0b0'}
+};
+
+const PLAYER_KEYS = ['swordsman','spearman','archer','cavalry'];
+const ENEMY_POOL = ['legionary','halberdier','axeman','raider'];
+const LANES = [585, 648, 708];
+const STAGES = [
+  {name:'CHAPTER I — RUINED OUTPOST', waves:[['legionary','legionary','halberdier'],['legionary','axeman','halberdier','legionary'],['legionary','legionary','axeman','halberdier','raider'],['raider','axeman','axeman','halberdier','legionary'],['raider','raider','halberdier','axeman','legionary'],['raider','halberdier','axeman','raider','legionary','axeman']]},
+  {name:'CHAPTER II — BROKEN CAUSEWAY', waves:[['halberdier','axeman','legionary','legionary'],['raider','halberdier','axeman','legionary'],['raider','axeman','axeman','halberdier','legionary'],['raider','raider','halberdier','axeman','axeman'],['raider','raider','raider','halberdier','axeman'],['raider','raider','axeman','axeman','halberdier','legionary']]},
+  {name:'CHAPTER III — ASHEN SIEGE', waves:[['raider','halberdier','axeman','legionary'],['raider','raider','axeman','halberdier'],['raider','raider','axeman','axeman','halberdier'],['raider','raider','raider','halberdier','axeman'],['raider','raider','raider','axeman','axeman','halberdier'],['raider','raider','raider','raider','axeman','halberdier','legionary']]}
+];
+
+const state = {
+  started:false, paused:false, stage:0, wave:0, speed:1, order:'advance', mana:300, maxMana:500,
+  gold:0, kills:0, front:0.5, playerCastleHp:3500, enemyCastleHp:3500, maxCastleHp:3500,
+  units:[], projectiles:[], particles:[], skyBolts:[], queue:[], spawnTimer:1.1, nextWaveDelay:3, waveCleared:false,
+  heroCooldown:0, meteorCooldown:0, barrageCooldown:0, rallyTimer:0, shake:0, time:0, laneTick:0,
+  cooldowns:{swordsman:0,spearman:0,archer:0,cavalry:0}, toastTimer:0, log:[], winner:null,
+  embers: Array.from({length:90},()=>({x:Math.random()*W,y:Math.random()*H*.78,v:8+Math.random()*22,s:1+Math.random()*3,a:.15+Math.random()*.35})),
+  fogShift:0
+};
+
+function showToast(text){ ui.toast.textContent=text; ui.toast.classList.add('show'); state.toastTimer=1.6; }
+function addLog(text){ state.log.unshift('• '+text); state.log = state.log.slice(0,14); ui.log.innerHTML = state.log.map(x=>`<div>${x}</div>`).join(''); }
+function flash(power=.9){ ui.flash.style.opacity = power; setTimeout(()=>ui.flash.style.opacity=0,110); }
+
+function cardArt(row){ const fw=assets.friend.width/4, fh=assets.friend.height/8; const c=document.createElement('canvas'); c.width=120; c.height=120; const g=c.getContext('2d'); g.clearRect(0,0,120,120); g.drawImage(assets.friend,0,row*fh,fw,fh,0,0,120,120); return c.toDataURL('image/png'); }
+
+function buildCards(){
+  ui.cards.innerHTML='';
+  PLAYER_KEYS.forEach((key,i)=>{
+    const d=UNIT_DEFS[key];
+    const el=document.createElement('button');
+    el.className='card'; el.id='card-'+key;
+    el.innerHTML=`<div class="num">${i+1}</div><img src="${cardArt

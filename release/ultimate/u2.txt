@@ -1,0 +1,160 @@
+(d.row)}" alt=""><div class="name">${d.name}</div><div class="role">${d.role}</div><div class="meta">${d.cost} Mana</div><div class="desc">${d.desc}</div><div class="cool"></div>`;
+    el.onclick=()=>spawnPlayer(key);
+    ui.cards.appendChild(el);
+  });
+}
+
+function openMenu(){
+  state.started=false; state.paused=true;
+  ui.overlay.style.display='grid';
+  ui.modal.innerHTML = `
+    <h1>WARFRONT<span>RISE OF ASH</span></h1>
+    <p>A PC-first illustrated side-battle strategy build inspired by Epic War. Hold the Ravenhold line, break the Obsidian Legion, summon Arthos and drown the battlefield in meteors.</p>
+    <div class="stageSelect">
+      ${STAGES.map((s,i)=>`<button class="btn stageBtn" data-stage="${i}"><strong>${s.name}</strong><span>${s.waves.length} waves · Heavier pressure and larger assaults each chapter.</span></button>`).join('')}
+    </div>
+    <div class="actions"><button class="btn primary" id="startStageBtn">Begin Selected Chapter</button></div>`;
+  let selected=0;
+  const setActive=()=>[...ui.modal.querySelectorAll('.stageBtn')].forEach((b,idx)=>b.style.outline = idx===selected ? '2px solid #d56d6a':'none');
+  ui.modal.querySelectorAll('.stageBtn').forEach(btn=>btn.onclick=()=>{selected=+btn.dataset.stage; setActive();});
+  setActive();
+  $('#startStageBtn').onclick=()=>startGame(selected);
+}
+
+function startGame(stageIdx=0){
+  Object.assign(state, {started:true, paused:false, stage:stageIdx, wave:0, speed:1, order:'advance', mana:260, maxMana:500, gold:0, kills:0,
+    front:0.5, playerCastleHp:3500, enemyCastleHp:3500, units:[], projectiles:[], particles:[], skyBolts:[], queue:[], spawnTimer:1.1, nextWaveDelay:2.2,
+    waveCleared:false, heroCooldown:0, meteorCooldown:0, barrageCooldown:0, rallyTimer:0, shake:0, time:0, laneTick:0, cooldowns:{swordsman:0,spearman:0,archer:0,cavalry:0}, winner:null});
+  state.maxCastleHp=state.playerCastleHp;
+  ui.overlay.style.display='none';
+  ui.stageTitle.textContent = STAGES[state.stage].name;
+  setWave(0);
+  updateHUD();
+  addLog('The armies clash beneath the walls.');
+}
+
+function victory(){
+  state.winner='victory'; state.started=false; state.paused=true;
+  ui.overlay.style.display='grid';
+  ui.modal.innerHTML=`<h1>VICTORY<span>RAVENHOLD HOLDS</span></h1><p>You shattered the Obsidian assault. Gold gained: ${state.gold}. Kills: ${state.kills}. The battlefield bends back toward Ravenhold.</p><div class="actions"><button class="btn primary" id="playAgain">Play Again</button><button class="btn" id="menuBtn">Back to Chapters</button></div>`;
+  $('#playAgain').onclick=()=>startGame(state.stage);
+  $('#menuBtn').onclick=()=>openMenu();
+}
+function defeat(){
+  state.winner='defeat'; state.started=false; state.paused=true;
+  ui.overlay.style.display='grid';
+  ui.modal.innerHTML=`<h1>DEFEAT<span>THE LEGION BREAKS THROUGH</span></h1><p>Ravenhold's line collapses beneath the siege. Re-form the army and try again.</p><div class="actions"><button class="btn primary" id="retryBtn">Retry Chapter</button><button class="btn" id="menuBtn2">Back to Chapters</button></div>`;
+  $('#retryBtn').onclick=()=>startGame(state.stage);
+  $('#menuBtn2').onclick=()=>openMenu();
+}
+
+function setWave(idx){
+  state.wave=idx; state.queue = [...STAGES[state.stage].waves[idx]]; state.spawnTimer=1.2; state.waveCleared=false;
+  addLog(`Enemy wave ${idx+1} begins.`);
+}
+
+function laneY(idx){ return LANES[idx]; }
+function randLane(){ return Math.floor(Math.random()*LANES.length); }
+function makeUnit(team,key,x,lane){
+  const d=UNIT_DEFS[key];
+  const hero = !!d.hero;
+  return {
+    id:Math.random().toString(36).slice(2), team, key, lane, x, y:laneY(lane), baseY:laneY(lane), hp:d.hp, maxHp:d.hp,
+    dmg:d.dmg, speed:d.speed, range:d.range, cd:d.cd, attackCd:Math.random()*.2, size:d.size, row:d.row, projectile:!!d.projectile,
+    state:'walk', anim:Math.random(), facing:team==='player'?1:-1, dead:false, death:0, hit:0, hero, aura: hero?1:0,
+    buff:0, push: team==='player' ? 1 : -1, recoil:0, zOffset:0
+  };
+}
+
+function spawnPlayer(key){
+  if(!state.started || state.paused) return;
+  const d=UNIT_DEFS[key];
+  if(state.mana < d.cost){ showToast('Not enough mana'); return; }
+  if(state.cooldowns[key] > 0){ showToast('Unit recharging'); return; }
+  state.mana -= d.cost; state.cooldowns[key] = key==='cavalry'?1.8:.9;
+  const lane=randLane();
+  const u=makeUnit('player',key,130+Math.random()*30,lane);
+  state.units.push(u);
+  addLog(`${d.name} deployed.`);
+}
+
+function spawnHero(){
+  if(!state.started || state.paused) return;
+  if(state.heroCooldown>0){ showToast('Arthos is regrouping'); return; }
+  const count = state.units.filter(u=>u.hero&&!u.dead).length;
+  if(count>0){ showToast('Arthos is already in battle'); return; }
+  state.heroCooldown=26;
+  const u=makeUnit('player','arthos',118,1);
+  u.hp = u.maxHp = 720; u.dmg=58; u.size=2.3; u.aura=1;
+  state.units.push(u);
+  flash(.7); addLog('Arthos rides into the fray!');
+}
+
+function meteorRain(){
+  if(!state.started || state.paused) return;
+  if(state.mana<180){ showToast('Need 180 mana'); return; }
+  if(state.meteorCooldown>0){ showToast('Meteor rain recharging'); return; }
+  state.mana-=180; state.meteorCooldown=15; flash(1);
+  for(let i=0;i<10;i++){
+    const x=760 + (Math.random()*420-210);
+    state.skyBolts.push({x,y:-140,tx:x + (Math.random()*40-20), ty:520+Math.random()*180, t:i*.12, blast:false});
+  }
+  addLog('Meteor rain scorches the field.');
+}
+
+function ballistaBarrage(){
+  if(!state.started || state.paused) return;
+  if(state.barrageCooldown>0){ showToast('Ballista teams reloading'); return; }
+  state.barrageCooldown=12;
+  for(let i=0;i<6;i++){
+    const enemy = aliveUnits('enemy')[Math.floor(Math.random()*aliveUnits('enemy').length)];
+    if(enemy){ state.projectiles.push({x:146, y:500+i*12, tx:enemy.x, ty:enemy.y-80, team:'player', dmg:48, type:'bolt', t:i*.08, arc:.18}); }
+  }
+  addLog('Ravenhold ballistae unleash a barrage.');
+}
+
+function orderChange(type){
+  state.order=type;
+  ui.battleStatus.textContent = type==='advance'?'Advance':type==='hold'?'Hold the Line':type==='retreat'?'Retreat':'Rally Push';
+  document.querySelectorAll('[data-order]').forEach(b=>b.classList.toggle('active', b.dataset.order===type));
+  if(type==='rally'){ state.rallyTimer=7; addLog('Rally push! Friendly troops surge forward.'); }
+}
+
+function spawnEnemy(){
+  if(!state.queue.length) return;
+  const key = state.queue.shift();
+  const lane = randLane();
+  const u = makeUnit('enemy',key,1455+Math.random()*25,lane);
+  state.units.push(u);
+}
+
+function aliveUnits(team){ return state.units.filter(u=>u.team===team && !u.dead); }
+
+function nearestEnemy(u){
+  let best=null, bestD=99999;
+  for(const e of state.units){
+    if(e.dead || e.team===u.team) continue;
+    const dx=Math.abs(e.x-u.x); const dy=Math.abs(e.baseY-u.baseY);
+    if(dy>55) continue;
+    if(dx<bestD){ bestD=dx; best=e; }
+  }
+  return [best,bestD];
+}
+
+function hitTarget(attacker,target,amount,crit=false){
+  target.hp -= amount;
+  target.hit=.14; target.recoil = (attacker.team==='player'?1:-1)*(attacker.key==='cavalry'||attacker.key==='raider'?16:9);
+  spawnBurst(target.x, target.y-90, crit?22:14, attacker.team==='player'?'#93d5ff':'#ff8e8e');
+  if(target.hp<=0 && !target.dead){
+    target.dead=true; target.death=.95; target.state='dead'; state.kills += attacker.team==='player' ? 1 : 0; state.gold += attacker.team==='player' ? 8 : 0;
+    if(target.hero) addLog('A champion has fallen.');
+  }
+}
+
+function spawnBurst(x,y,count,color){
+  for(let i=0;i<count;i++) state.particles.push({x,y,vx:(Math.random()*2-1)*130,vy:-30-Math.random()*180,life:.35+Math.random()*.35,size:2+Math.random()*4,color});
+}
+
+function updateUnit(u,dt){
+  if(u.dead){ u.death-=dt; u.anim+=dt*4; return; }
+  u.hit=Math.max(0,u.hit-dt); if(u.recoil) u.recoil*=Math.max(0,1-dt*8); u.anim

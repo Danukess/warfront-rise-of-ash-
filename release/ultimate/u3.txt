@@ -1,0 +1,181 @@
+ += dt*(u.state==='attack'?9:u.state==='idle'?3:5);
+  u.attackCd=Math.max(0,u.attackCd-dt); u.buff=Math.max(0,u.buff-dt);
+  if(u.hero){ u.aura = 0.65 + Math.sin(state.time*4)*0.15; }
+
+  const [enemy,dist] = nearestEnemy(u);
+  const dir = u.team==='player' ? 1 : -1;
+  const castleX = u.team==='player' ? 1400 : 200;
+
+  let moveBoost = 0;
+  if(state.order==='rally' && u.team==='player') moveBoost = 28;
+  if(state.rallyTimer>0 && u.team==='player') moveBoost = 20;
+
+  const crowd = state.units.filter(v=>v!==u && v.team===u.team && !v.dead && v.lane===u.lane && Math.abs(v.x-u.x)<60);
+  crowd.forEach(v=>{ u.x += (u.team==='player'?-1:1) * dt * 12; });
+
+  if(enemy && dist <= u.range + (u.projectile?40:0)){
+    u.state='attack';
+    if(u.attackCd<=0){
+      u.attackCd = Math.max(.35, u.cd*(u.buff>0?.78:1));
+      const dmg = Math.round(u.dmg * (u.hero?1.12:1) * (u.buff>0?1.2:1));
+      if(u.projectile){
+        state.projectiles.push({x:u.x+dir*36,y:u.y-125,tx:enemy.x,ty:enemy.y-95,team:u.team,dmg,type:'arrow',arc:.22});
+      }else{
+        hitTarget(u, enemy, dmg, u.hero || u.key==='cavalry' || u.key==='raider');
+      }
+    }
+  }else{
+    u.state='walk';
+    let desired = dir*(u.speed + moveBoost + (u.key==='cavalry'||u.key==='raider'?18:0));
+    if(u.team==='player' && state.order==='hold') desired = dir*Math.min(desired, 34);
+    if(u.team==='player' && state.order==='retreat') desired = -Math.abs(u.speed*.95);
+    if(u.team==='player' && u.x<130 && state.order==='retreat') desired = 0;
+    u.x += desired*dt;
+    if((u.team==='player' && u.x>=castleX) || (u.team==='enemy' && u.x<=castleX)){
+      u.state='attack';
+      if(u.attackCd<=0){
+        u.attackCd=u.cd*1.05;
+        if(u.team==='player'){ state.enemyCastleHp-=u.dmg*(u.hero?1.15:1); }
+        else { state.playerCastleHp-=u.dmg; }
+        state.shake = Math.max(state.shake, 4);
+        flash(.18);
+      }
+    }
+  }
+  u.zOffset = (u.lane-1)*4;
+}
+
+function updateProjectiles(dt){
+  for(let i=state.projectiles.length-1;i>=0;i--){
+    const p=state.projectiles[i];
+    p.t=(p.t||0)+dt*1.7;
+    if(p.t<0) continue;
+    if(!('sx' in p)){ p.sx=p.x; p.sy=p.y; }
+    p.progress=(p.progress||0)+dt*(p.type==='bolt'?1.8:2.6);
+    const pr=Math.min(1,p.progress);
+    const mx = p.sx + (p.tx-p.sx)*pr;
+    const my = p.sy + (p.ty-p.sy)*pr - Math.sin(pr*Math.PI)*((p.type==='bolt'?120:80)*(p.arc||.2));
+    p.x=mx; p.y=my;
+    if(pr>=1){
+      const target = state.units.find(u=>!u.dead && Math.abs(u.x-p.tx)<55 && Math.abs(u.y-95-p.ty)<65 && u.team!==(p.team||'player'));
+      if(target) hitTarget({team:p.team,key:p.type==='bolt'?'cavalry':'archer'}, target, p.dmg, p.type==='bolt');
+      else if(p.team==='player') state.enemyCastleHp-=Math.max(0,p.dmg-10); else state.playerCastleHp-=Math.max(0,p.dmg-10);
+      spawnBurst(p.tx,p.ty,10,p.team==='player'?'#cfecff':'#ffc1c1');
+      state.projectiles.splice(i,1);
+    }
+  }
+}
+
+function updateMeteors(dt){
+  for(let i=state.skyBolts.length-1;i>=0;i--){
+    const m=state.skyBolts[i]; m.t-=dt; if(m.t>0) continue;
+    m.y += 780*dt; m.x += 80*dt;
+    if(m.y>=m.ty && !m.blast){
+      m.blast=true; flash(.45); spawnBurst(m.tx,m.ty,32,'#ffb070');
+      aliveUnits('enemy').forEach(e=>{ if(Math.abs(e.x-m.tx)<110 && Math.abs(e.y-m.ty)<100) hitTarget({team:'player',key:'meteor'}, e, 85, true); });
+      state.shake = Math.max(state.shake, 10);
+      state.skyBolts.splice(i,1);
+    }
+  }
+}
+
+function updateState(dt){
+  if(!state.started || state.paused) return;
+  dt *= state.speed;
+  state.time += dt;
+  state.fogShift += dt*16;
+  state.mana = Math.min(state.maxMana, state.mana + (28 + aliveUnits('player').length*0.2)*dt);
+  state.heroCooldown=Math.max(0,state.heroCooldown-dt);
+  state.meteorCooldown=Math.max(0,state.meteorCooldown-dt);
+  state.barrageCooldown=Math.max(0,state.barrageCooldown-dt);
+  state.rallyTimer=Math.max(0,state.rallyTimer-dt);
+  PLAYER_KEYS.forEach(k=>state.cooldowns[k]=Math.max(0,state.cooldowns[k]-dt));
+  if(state.toastTimer>0){ state.toastTimer-=dt/state.speed; if(state.toastTimer<=0) ui.toast.classList.remove('show'); }
+
+  if(state.queue.length){
+    state.spawnTimer -= dt;
+    if(state.spawnTimer<=0){ state.spawnTimer = 0.9 + Math.random()*0.35; spawnEnemy(); }
+  }else if(!aliveUnits('enemy').length){
+    if(!state.waveCleared){ state.waveCleared=true; addLog(`Wave ${state.wave+1} broken.`); }
+    state.nextWaveDelay -= dt;
+    if(state.nextWaveDelay<=0){
+      if(state.wave < STAGES[state.stage].waves.length-1){ setWave(state.wave+1); state.nextWaveDelay=2.8; }
+      else return victory();
+    }
+  }
+
+  state.units.forEach(u=>updateUnit(u,dt));
+  updateProjectiles(dt);
+  updateMeteors(dt);
+
+  for(let i=state.particles.length-1;i>=0;i--){ const p=state.particles[i]; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy += 240*dt; p.life-=dt; if(p.life<=0) state.particles.splice(i,1); }
+  state.units = state.units.filter(u=>!(u.dead && u.death<=0));
+  if(state.playerCastleHp<=0) defeat();
+  if(state.enemyCastleHp<=0) victory();
+}
+
+function getFrame(u){
+  const d = UNIT_DEFS[u.key];
+  const row=d.row;
+  if(u.dead) return {col:3,row:row+1};
+  if(u.state==='attack') return {col:[0,1,2][Math.floor(u.anim)%3],row:row+1};
+  if(u.state==='idle') return {col:0,row};
+  return {col:Math.floor(u.anim)%4,row};
+}
+
+function drawBackground(){
+  const bg=assets.background;
+  const scale = Math.max(W/bg.width, H/bg.height);
+  const bw=bg.width*scale, bh=bg.height*scale, bx=(W-bw)/2, by=(H-bh)/2;
+  ctx.save();
+  ctx.drawImage(bg,bx,by,bw,bh);
+  ctx.fillStyle='rgba(5,8,12,.25)'; ctx.fillRect(0,0,W,H);
+  const grad=ctx.createLinearGradient(0,0,0,H); grad.addColorStop(0,'rgba(10,14,20,.15)'); grad.addColorStop(.68,'rgba(6,8,10,.12)'); grad.addColorStop(1,'rgba(3,4,5,.55)'); ctx.fillStyle=grad; ctx.fillRect(0,0,W,H);
+  // low fog bands
+  for(let i=0;i<4;i++){
+    ctx.globalAlpha=.08 + i*.03;
+    ctx.fillStyle=i%2?'#f8f4ef':'#ced8e7';
+    const y=560 + i*36 + Math.sin((state.fogShift+i*60)*0.02)*5;
+    ctx.fillRect(-80,y,W+160,42+i*8);
+  }
+  ctx.globalAlpha=1;
+  // castle depth shadows to carve playable lane
+  ctx.fillStyle='rgba(0,0,0,.18)'; ctx.fillRect(0,470,225,300); ctx.fillRect(W-225,470,225,300);
+  ctx.restore();
+}
+
+function drawCastle(side){
+  const left = side==='left';
+  const x = left ? 16 : W-210;
+  const w = 194, baseY = 675;
+  ctx.save();
+  ctx.translate(x,0);
+  // wall and towers
+  const wallGrad = ctx.createLinearGradient(0,0,w,0); wallGrad.addColorStop(0,left?'#868e9d':'#5f4348'); wallGrad.addColorStop(1,left?'#d3dae3':'#a66a6b');
+  ctx.globalAlpha=.95;
+  ctx.fillStyle='rgba(0,0,0,.25)'; ctx.fillRect(8,600,w-16,118);
+  ctx.fillStyle=wallGrad; ctx.fillRect(18,562,w-36,126);
+  ctx.strokeStyle='rgba(0,0,0,.45)'; ctx.lineWidth=3; ctx.strokeRect(18,562,w-36,126);
+  for(let t=0;t<3;t++){
+    const tx=22+t*60; const tw=t===1?48:42; const th=t===1?150:128;
+    ctx.fillStyle=wallGrad; ctx.fillRect(tx, baseY-th, tw, th);
+    ctx.strokeRect(tx, baseY-th, tw, th);
+    for(let c=0;c<4;c++) ctx.fillRect(tx+c*(tw/4), baseY-th-14, 8, 14);
+    // windows/glow
+    for(let n=0;n<3;n++){
+      ctx.fillStyle= left ? 'rgba(113,189,255,.75)' : 'rgba(255,114,84,.75)';
+      ctx.fillRect(tx+12+n*10, baseY-th+22+n*18, 5, 10);
+    }
+  }
+  // gate
+  ctx.fillStyle=left?'#0b1a28':'#2a1211'; ctx.fillRect(72,608,50,80);
+  ctx.beginPath(); ctx.arc(97,608,25,Math.PI,0); ctx.closePath(); ctx.fill();
+  // banner
+  ctx.strokeStyle=left?'#7fc6ff':'#ff8e8e'; ctx.lineWidth=4;
+  const bx=left?36:w-38; const dir=left?1:-1;
+  ctx.beginPath(); ctx.moveTo(bx,512); ctx.lineTo(bx,574); ctx.stroke();
+  ctx.fillStyle=left?'#285e9a':'#7f1d24';
+  ctx.beginPath(); ctx.moveTo(bx,516); ctx.lineTo(bx+dir*60,526); ctx.lineTo(bx+dir*38,556); ctx.lineTo(bx,544); ctx.closePath(); ctx.fill();
+  // torch glows
+  for(const gx of [36,w-36]){
+    const g

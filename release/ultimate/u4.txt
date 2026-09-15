@@ -1,0 +1,149 @@
+low = ctx.createRadialGradient(gx,592,3,gx,592,28); glow.addColorStop(0,'rgba(255,182,95,.95)'); glow.addColorStop(1,'rgba(255,182,95,0)'); ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(gx,592,28,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawGround(){
+  // playable lane shadow
+  const g = ctx.createLinearGradient(0,540,0,840); g.addColorStop(0,'rgba(22,18,14,0)'); g.addColorStop(.2,'rgba(28,22,16,.34)'); g.addColorStop(1,'rgba(9,8,8,.95)');
+  ctx.fillStyle=g; ctx.fillRect(0,510,W,390);
+  // road strip
+  const road = ctx.createLinearGradient(0,0,0,0); road.addColorStop(0,'rgba(180,130,78,.08)'); road.addColorStop(.5,'rgba(215,170,105,.14)'); road.addColorStop(1,'rgba(160,118,70,.08)');
+  ctx.fillStyle=road; ctx.fillRect(150,600,1300,90);
+  // lane dust lines
+  ctx.strokeStyle='rgba(220,188,130,.10)'; ctx.lineWidth=2;
+  LANES.forEach((y,i)=>{ ctx.beginPath(); ctx.moveTo(160,y+18); ctx.lineTo(1440,y+18); ctx.stroke(); });
+}
+
+function drawSkyFire(){
+  // incoming background siege projectiles
+  for(let i=0;i<5;i++){
+    const x=250+i*260+Math.sin(state.time*.35+i)*18; const y=120+i*38;
+    ctx.strokeStyle='rgba(255,174,109,.55)'; ctx.lineWidth=2.3; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+70,y+24); ctx.stroke();
+    const grd = ctx.createRadialGradient(x,y,2,x,y,16); grd.addColorStop(0,'rgba(255,220,150,.9)'); grd.addColorStop(1,'rgba(255,220,150,0)'); ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(x,y,16,0,Math.PI*2); ctx.fill();
+  }
+}
+
+function drawEmbers(dt){
+  state.embers.forEach(e=>{ e.y-=e.v*dt; e.x+=Math.sin((state.time+e.y)*0.8)*0.12; if(e.y<-10){e.y=H*0.8+Math.random()*180; e.x=Math.random()*W;} ctx.globalAlpha=e.a; ctx.fillStyle='#ffb46a'; ctx.fillRect(e.x,e.y,e.s,e.s); });
+  ctx.globalAlpha=1;
+}
+
+function drawUnit(u){
+  const atlas = u.team==='player' ? assets.friend : assets.enemy;
+  const f = getFrame(u); const fw=atlas.width/4, fh=atlas.height/8;
+  const laneScale = u.lane===1 ? 1 : .93;
+  const drawW = fw*u.size*laneScale, drawH = fh*u.size*laneScale;
+  const x = u.x + (u.recoil||0), y = u.baseY + u.zOffset;
+  ctx.save();
+  if(u.team==='enemy'){ ctx.translate(x,y); ctx.scale(-1,1); ctx.translate(-x,-y); }
+  // selection glow
+  if(u.hero){ const gr=ctx.createRadialGradient(x,y-80,10,x,y-80,80); gr.addColorStop(0,'rgba(120,190,255,.25)'); gr.addColorStop(1,'rgba(120,190,255,0)'); ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(x,y-80,80,0,Math.PI*2); ctx.fill(); }
+  if(u.hit>0){ ctx.filter='brightness(1.35)'; }
+  ctx.globalAlpha = u.dead ? Math.max(0,u.death) : 1;
+  ctx.fillStyle='rgba(0,0,0,.34)'; ctx.beginPath(); ctx.ellipse(x, y+4, drawW*.22, drawW*.06, 0, 0, Math.PI*2); ctx.fill();
+  ctx.drawImage(atlas, f.col*fw, f.row*fh, fw, fh, x-drawW*.5, y-drawH+24, drawW, drawH);
+  ctx.restore();
+  // hp bar
+  if(!u.dead){
+    const bw = Math.max(34, drawW*.42), bh=6, yy=y-drawH+14;
+    ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillRect(x-bw/2-1,yy-1,bw+2,bh+2);
+    ctx.fillStyle='rgba(44,49,58,.85)'; ctx.fillRect(x-bw/2,yy,bw,bh);
+    ctx.fillStyle=u.team==='player' ? '#4eb8ff' : '#ff5f6a'; ctx.fillRect(x-bw/2,yy,bw*(u.hp/u.maxHp),bh);
+  }
+}
+
+function drawProjectiles(){
+  state.projectiles.forEach(p=>{
+    if((p.t||0)<0) return;
+    ctx.save();
+    if(p.type==='bolt'){
+      ctx.strokeStyle='#d4c0a0'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(p.x-12,p.y-2); ctx.lineTo(p.x+14,p.y+2); ctx.stroke();
+    }else{
+      ctx.strokeStyle=p.team==='player' ? '#d7ecff' : '#ffc7c7'; ctx.lineWidth=2.8; ctx.beginPath(); ctx.moveTo(p.x-9,p.y); ctx.lineTo(p.x+9,p.y); ctx.stroke();
+    }
+    ctx.restore();
+  });
+  state.skyBolts.forEach(m=>{ if(m.t>0) return; ctx.strokeStyle='rgba(255,180,80,.95)'; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(m.x-12,m.y-90); ctx.lineTo(m.x,m.y); ctx.stroke(); });
+}
+
+function drawParticles(){
+  state.particles.forEach(p=>{ ctx.globalAlpha=Math.max(0,p.life/.7); ctx.fillStyle=p.color; ctx.fillRect(p.x,p.y,p.size,p.size); });
+  ctx.globalAlpha=1;
+}
+
+function drawHUD(){
+  const p=aliveUnits('player'), e=aliveUnits('enemy');
+  const friendlyFront = p.length ? Math.max(...p.map(u=>u.x)) : 150;
+  const enemyFront = e.length ? Math.min(...e.map(u=>u.x)) : 1450;
+  const front = Math.max(0, Math.min(1, (friendlyFront-120)/(1360-120)));
+  ui.frontBlue.style.width = `${Math.max(4, front*100)}%`;
+  ui.frontRed.style.width = `${Math.max(4, (1-(enemyFront-240)/(1360-240))*100)}%`;
+}
+
+function render(dt){
+  ctx.save();
+  ctx.clearRect(0,0,W,H);
+  if(state.shake>0){ const s=state.shake; ctx.translate((Math.random()*2-1)*s,(Math.random()*2-1)*s); state.shake*=.86; }
+  drawBackground();
+  drawSkyFire();
+  drawCastle('left'); drawCastle('right');
+  drawGround();
+  drawEmbers(dt);
+  const sorted = [...state.units].sort((a,b)=>(a.baseY+a.zOffset)-(b.baseY+b.zOffset));
+  sorted.forEach(drawUnit);
+  drawProjectiles();
+  drawParticles();
+  ctx.restore();
+}
+
+function updateHUD(){
+  ui.waveText.textContent = `${state.wave+1} / ${STAGES[state.stage].waves.length}`;
+  ui.manaText.textContent = `${Math.floor(state.mana)} / ${state.maxMana}`;
+  ui.playerHp.style.width = `${Math.max(0,(state.playerCastleHp/state.maxCastleHp)*100)}%`;
+  ui.enemyHp.style.width = `${Math.max(0,(state.enemyCastleHp/state.maxCastleHp)*100)}%`;
+  const battleStatus = state.order==='advance'?'Advance':state.order==='hold'?'Hold the Line':state.order==='retreat'?'Retreat':'Rally Push';
+  ui.battleStatus.textContent = battleStatus + (state.rallyTimer>0?' · Buff Active':'');
+  ui.resources.innerHTML = `
+    <div>Mana<br><span style="color:#79c8ff">${Math.floor(state.mana)} / ${state.maxMana}</span></div>
+    <div>Gold<br><span style="color:#f0d088">${state.gold}</span></div>
+    <div>Kills<br><span style="color:#e3e6ec">${state.kills}</span></div>
+    <div>Army<br><span style="color:#e3e6ec">${aliveUnits('player').length} vs ${aliveUnits('enemy').length}</span></div>
+    <div>Arthos<br><span style="color:${state.heroCooldown>0?'#ff9c74':'#98e0ff'}">${state.heroCooldown>0?state.heroCooldown.toFixed(1)+'s':'Ready'}</span></div>
+    <div>Spells<br><span style="color:#e3e6ec">Meteor ${state.meteorCooldown>0?state.meteorCooldown.toFixed(1)+'s':'Ready'}</span></div>`;
+  PLAYER_KEYS.forEach(k=>{
+    const d=UNIT_DEFS[k], el=$('#card-'+k); if(!el) return;
+    const disabled = state.mana < d.cost || state.cooldowns[k] > 0 || !state.started || state.paused;
+    el.classList.toggle('disabled', disabled);
+    el.querySelector('.meta').textContent = state.cooldowns[k]>0 ? `${state.cooldowns[k].toFixed(1)}s` : `${d.cost} Mana`;
+  });
+  drawHUD();
+}
+
+let last=0;
+function loop(ts){
+  const dt=Math.min(.033,(ts-last)/1000||.016); last=ts;
+  updateState(dt);
+  render(dt);
+  updateHUD();
+  requestAnimationFrame(loop);
+}
+
+function bind(){
+  buildCards();
+  document.querySelectorAll('.speedBtn').forEach(btn=>btn.onclick=()=>{ state.speed=+btn.dataset.speed; document.querySelectorAll('.speedBtn').forEach(b=>b.classList.toggle('active',b===btn)); });
+  $('#pauseBtn').onclick=()=>{ state.paused=!state.paused; showToast(state.paused?'Paused':'Resumed'); };
+  document.querySelectorAll('[data-order]').forEach(btn=>btn.onclick=()=>orderChange(btn.dataset.order));
+  $('#heroBtn').onclick=spawnHero; $('#meteorBtn').onclick=meteorRain; $('#ballistaBtn').onclick=ballistaBarrage;
+  addEventListener('keydown',e=>{
+    const k=e.key.toLowerCase();
+    if(['1','2','3','4'].includes(k)) spawnPlayer(PLAYER_KEYS[+k-1]);
+    if(k==='q') spawnHero(); if(k==='w') meteorRain(); if(k==='e') ballistaBarrage();
+    if(k==='a') orderChange('advance'); if(k==='s') orderChange('hold'); if(k==='d') orderChange('retreat'); if(k==='f') orderChange('rally');
+    if(e.code==='Space'){ state.paused=!state.paused; }
+  });
+}
+
+async function loadChunked(mime, paths){
+  let b64='';
+  for(const path of paths){ const r=await fetch(path+'
