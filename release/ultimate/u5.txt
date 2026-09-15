@@ -10,5 +10,6 @@ Promise.all([
 }).catch(err=>{ console.error(err); document.body.innerHTML='<div style="padding:24px;color:white;font-family:Arial">Failed to load assets: '+String(err)+'</div>'; });
 </script>
 <script src="release/ultimate/final_fix.js?v=finalfix1"></script>
+<script src="release/ultimate/cleanup_patch.js?v=alpha1"></script>
 </body>
 </html>
